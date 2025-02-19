@@ -1,0 +1,128 @@
+---
+- name: Install and Configure Kubernetes Cluster
+  hosts: k8s_cluster
+#  become: yes
+  vars:
+    kube_version: "1.31"
+    pod_network_cidr: "10.244.0.0/16"
+    ssh_user: "ec"
+    ssh_key_path: "~/.ssh/id_rsa"
+  tasks:
+    # Step 1: Install dependencies on all nodes
+    - name: Install required packages and dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - curl
+          - containerd
+        state: present
+        update_cache: yes
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Configure containerd
+      shell: |
+        sudo mkdir -p /etc/containerd
+        containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+        sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+        sudo systemctl restart containerd
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Add Kubernetes GPG key
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['control-plane'] + groups['workers'] }}"
+
+    - name: Add Kubernetes apt repository entry
+      shell: |
+        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+      delegate_to: "{{ item }}"
+      loop: "{{ groups['control-plane'] + groups['workers'] }}"
+
+    - name: Install Kubernetes packages (kubelet, kubeadm, kubectl)
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+      delegate_to: "{{ inventory_hostname }}"
+
+#    - name: Hold Kubernetes packages to prevent upgrade
+#      command: apt-mark hold kubelet kubeadm kubectl
+#      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Disable swap and remove swap entry in fstab
+      block:
+        - name: Disable swap
+          command: swapoff -a
+          ignore_errors: yes
+
+        - name: Remove swap entry from /etc/fstab
+          lineinfile:
+            path: /etc/fstab
+            regexp: '^.*swap.*'
+            state: absent
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Load necessary kernek modules for kubernetes
+      command: modprobe "{{ item }}"
+      loop:
+        - br_netfilter
+        - iptable_filter
+        - ip_tables
+        - nf_nat
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Enable sysctl settings for Kubernetes
+      sysctl:
+        name: "{{ item }}"
+        value: "1"
+        state: present
+        reload: yes
+      loop:
+        - net.bridge.bridge-nf-call-iptables
+        - net.bridge.bridge-nf-call-ip6tables
+        - net.ipv4.ip_forward
+      delegate_to: "{{ inventory_hostname }}"
+
+    # Step 2: Initialize Kubernetes on the control plane node
+    - name: Initialize Kubernetes control plane
+      command: kubeadm init --pod-network-cidr={{ pod_network_cidr }}
+      when: "'control-plane' in group_names"
+      register: kubeadm_init
+      changed_when: "'Your Kubernetes control-plane node has initialized' in kubeadm_init.stdout"
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: Set up kubeconfig for the first control plane user
+      shell: |
+        mkdir -p $HOME/.kube
+        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        chown $(id -u):$(id -g) $HOME/.kube/config
+      delegate_to: "{{ groups['control-plane'][0] }}"
+      become: true
+      become_user: "{{ ansible_env.USER }}"
+      when: "'control-plane' in group_names"
+
+    - name: Install Network Plugin (flannel)
+      shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+#      when: kubeadm_init.changed
+      become: true
+      when: "'control-plane' in group_names"
+      delegate_to: "{{ groups['control-plane'][0] }}"
+
+    # Step 3: Get the join command from control plane
+    - name: Get Kubernetes join command for worker nodes
+      command: kubeadm token create --print-join-command
+      when: "'control-plane' in group_names"
+      register: join_command
+      changed_when: false
+      delegate_to: "{{ groups['control-plane'][0] }}"
+
+- name: Join worker nodes to the Kubernetes cluster
+  hosts: workers
+  become: true
+  tasks:
+    - name: Join worker node to the Kubernetes cluster
+      command: "{{ hostvars[groups['control-plane'][0]].join_command.stdout }}"
