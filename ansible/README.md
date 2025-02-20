@@ -3,7 +3,7 @@ This anible deploy a kubeadm cluster with 1 master and 2 workers
 configure the nodes:
 
     - setting static IP address.
-    - setting sudo permissions - adding to the sudo visudo the line (under %sudo) <user>ALL=(ALL:ALL) NOPASSWD: ALL.
+    - setting sudo permissions - adding to the sudo visudo the line (under %sudo) <user> ALL=(ALL:ALL) NOPASSWD: ALL.
     - pushing the ssh key to the nodes (from the ansible control node to the nodes after creating a key - ssh-keygen -t rsa). ssh-copy-id <user>@<node_ip>.  
 
 To deploy a Kubernetes cluster using `kubeadm` with 1 master and 2 worker nodes, you can use Ansible to automate the process (need to copy the files
