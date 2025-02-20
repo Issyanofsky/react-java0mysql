@@ -2,7 +2,7 @@ This anible deploy a kubeadm cluster with 1 master and 2 workers
 
 configure the nodes:
 
-    - setting static IP address.
+    - setting static IP address and hosname.
     - setting sudo permissions - adding to the sudo visudo the line (under %sudo) <user> ALL=(ALL:ALL) NOPASSWD: ALL.
     - pushing the ssh key to the nodes (from the ansible control node to the nodes after creating a key - ssh-keygen -t rsa). ssh-copy-id <user>@<node_ip>.  
 
