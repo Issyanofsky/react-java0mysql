@@ -12,7 +12,7 @@ to the ansible server - inventory.ini and k8s_install.yaml):
     - setting the inventory.ini (adjust to the ip of your nodes)
     - deploying the ansible script: ansible-playbook -i inventory.ini k8s_install.yaml
 
-in order to execute kubectl commands there a need to run those on the control plane node:
+in order to execute kubectl commands (on the control plane) there a need to run:
 
     - mkdir -p $HOME/.kube
     - sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
