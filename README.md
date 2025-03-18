@@ -23,7 +23,7 @@ Project structure:
 └── README.md
 ```
 
-[_compose.yaml_](compose.yaml)
+[docker_compose.yaml_](docker-compose.yaml)
 ```
 services:
   backend:
